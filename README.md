@@ -14,9 +14,10 @@ human-readable report.
 ## Usage
 
 ```
-report-secure.sh [-l <log_dir>] [-t] [-h]
+report-secure.sh [-l <log_dir>] [-d <days>] [-t] [-h]
 
   -l <log_dir>   Directory containing secure logs (default: /var/log)
+  -d <days>      Only collate events from the last <days> days (default: all available logs)
   -t             Simple table output: tab-separated username and count per line, no decorations
   -h             Show help message
 ```
@@ -29,6 +30,12 @@ sudo ./report-secure.sh
 
 # Analyze logs in a custom directory
 ./report-secure.sh -l /var/log/secure-archive
+
+# Only collate events from the last 7 days
+./report-secure.sh -d 7
+
+# Last 30 days, simple table output
+./report-secure.sh -d 30 -t
 
 # Output a simple table (user and session count only)
 ./report-secure.sh -t
@@ -43,6 +50,7 @@ sudo ./report-secure.sh
 ============================================================
  SSH Session Report
  Generated: 2026-03-12 06:00:01 UTC
+ Period    : Last 7 day(s)
  Log source: /var/log/secure{,.gz,.N,.N.gz,-YYYYMMDD{,.gz}}
 ============================================================
 
@@ -59,6 +67,8 @@ Sessions opened per user:
 
 ============================================================
 ```
+
+When `-d` is omitted, all available log files are processed and the `Period` line is not shown.
 
 ### Simple table output (`-t`)
 
