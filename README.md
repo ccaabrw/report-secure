@@ -14,9 +14,10 @@ human-readable report.
 ## Usage
 
 ```
-report-secure.sh [-l <log_dir>] [-h]
+report-secure.sh [-l <log_dir>] [-t] [-h]
 
   -l <log_dir>   Directory containing secure logs (default: /var/log)
+  -t             Simple table output: tab-separated username and count per line, no decorations
   -h             Show help message
 ```
 
@@ -28,6 +29,9 @@ sudo ./report-secure.sh
 
 # Analyze logs in a custom directory
 ./report-secure.sh -l /var/log/secure-archive
+
+# Output a simple table (user and session count only)
+./report-secure.sh -t
 
 # Show help
 ./report-secure.sh -h
@@ -54,6 +58,17 @@ Sessions opened per user:
   Unique users   : 3
 
 ============================================================
+```
+
+### Simple table output (`-t`)
+
+Use `-t` to get a compact, tab-separated list of users and session counts — useful
+for piping into other tools or scripts:
+
+```
+alice	42
+bob	17
+charlie	3
 ```
 
 ## Installation

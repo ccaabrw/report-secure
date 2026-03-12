@@ -6,8 +6,9 @@
 # Handles both current and older compressed logs.
 # Suitable for running as a cron job.
 #
-# Usage: report-secure.sh [-l <log_dir>] [-h]
+# Usage: report-secure.sh [-l <log_dir>] [-t] [-h]
 #   -l <log_dir>  Directory containing secure logs (default: /var/log)
+#   -t            Simple table output: tab-separated username and count per line, no decorations
 #   -h            Show this help message
 #
 # Cron example (daily at 06:00):
@@ -16,6 +17,7 @@
 set -euo pipefail
 
 LOG_DIR="/var/log"
+TABLE_ONLY=0
 PROG="$(basename "$0")"
 
 usage() {
@@ -29,9 +31,10 @@ die() {
     exit 1
 }
 
-while getopts ":l:h" opt; do
+while getopts ":l:th" opt; do
     case "$opt" in
         l) LOG_DIR="$OPTARG" ;;
+        t) TABLE_ONLY=1 ;;
         h) usage ;;
         :) die "Option -${OPTARG} requires an argument." ;;
         \?) die "Unknown option: -${OPTARG}" ;;
@@ -87,6 +90,16 @@ done < <(
 )
 
 # Report
+if [[ "$TABLE_ONLY" -eq 1 ]]; then
+    # Simple table: one "USER COUNT" line per user, sorted by count desc then name asc
+    for user in "${!user_count[@]}"; do
+        printf "%d %s\n" "${user_count[$user]}" "$user"
+    done | sort -k1,1rn -k2,2 | while read -r count user; do
+        printf "%s\t%d\n" "$user" "$count"
+    done
+    exit 0
+fi
+
 echo "============================================================"
 echo " SSH Session Report"
 echo " Generated: $(date '+%Y-%m-%d %H:%M:%S %Z')"
