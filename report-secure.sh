@@ -6,8 +6,9 @@
 # Handles both current and older compressed logs.
 # Suitable for running as a cron job.
 #
-# Usage: report-secure.sh [-l <log_dir>] [-t] [-h]
+# Usage: report-secure.sh [-l <log_dir>] [-d <days>] [-t] [-h]
 #   -l <log_dir>  Directory containing secure logs (default: /var/log)
+#   -d <days>     Only collate events from the last <days> days (default: all available logs)
 #   -t            Simple table output: tab-separated username and count per line, no decorations
 #   -h            Show this help message
 #
@@ -17,6 +18,8 @@
 set -euo pipefail
 
 LOG_DIR="/var/log"
+DAYS=0
+DAYS_SET=0
 TABLE_ONLY=0
 PROG="$(basename "$0")"
 
@@ -31,15 +34,25 @@ die() {
     exit 1
 }
 
-while getopts ":l:th" opt; do
+while getopts ":l:d:th" opt; do
     case "$opt" in
         l) LOG_DIR="$OPTARG" ;;
+        d) DAYS="$OPTARG"; DAYS_SET=1 ;;
         t) TABLE_ONLY=1 ;;
         h) usage ;;
         :) die "Option -${OPTARG} requires an argument." ;;
         \?) die "Unknown option: -${OPTARG}" ;;
     esac
 done
+
+if [[ "$DAYS_SET" -eq 1 ]]; then
+    [[ "$DAYS" =~ ^[1-9][0-9]*$ ]] || die "Option -d requires a positive integer."
+fi
+
+if [[ "$DAYS" -gt 0 ]]; then
+    CUTOFF_EPOCH=$(date -d "${DAYS} days ago" '+%s') \
+        || die "Option -d: failed to compute cutoff date."
+fi
 
 [[ -d "$LOG_DIR" ]] || die "Log directory not found: ${LOG_DIR}"
 
@@ -73,6 +86,31 @@ extract_events() {
     esac
 }
 
+# Filter syslog-format lines to only those dated within the last DAYS days.
+# Expects lines beginning with "Mon DD HH:MM:SS".  Lines that cannot be parsed
+# are passed through unchanged so that no events are silently dropped.
+filter_by_date() {
+    local cutoff_epoch="$1"
+    local current_year now_epoch
+    current_year=$(date '+%Y')
+    now_epoch=$(date '+%s')
+    awk -v cutoff="$cutoff_epoch" -v year="$current_year" -v now="$now_epoch" '
+    BEGIN {
+        n = split("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec", a)
+        for (i = 1; i <= n; i++) mon[a[i]] = i
+    }
+    {
+        if (!($1 in mon)) { next }  # drop lines with no recognisable syslog timestamp
+        split($3, t, ":")
+        epoch = mktime(year " " mon[$1] " " int($2) " " t[1] " " t[2] " " t[3])
+        if (epoch > now) {
+            # Timestamp appears to be in the future: assume previous year (year rollover).
+            epoch = mktime((year - 1) " " mon[$1] " " int($2) " " t[1] " " t[2] " " t[3])
+        }
+        if (epoch >= cutoff) print
+    }'
+}
+
 # Parse all log files and build a sorted username frequency table.
 declare -A user_count=()
 
@@ -86,7 +124,7 @@ while IFS= read -r line; do
 done < <(
     for f in "${LOG_FILES[@]}"; do
         extract_events "$f"
-    done
+    done | if [[ "$DAYS" -gt 0 ]]; then filter_by_date "$CUTOFF_EPOCH"; else cat; fi
 )
 
 # Report
@@ -103,6 +141,9 @@ fi
 echo "============================================================"
 echo " SSH Session Report"
 echo " Generated: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+if [[ "$DAYS" -gt 0 ]]; then
+    echo " Period    : Last ${DAYS} day(s)"
+fi
 echo " Log source: ${LOG_DIR}/secure{,.gz,.N,.N.gz,-YYYYMMDD{,.gz}}"
 echo "============================================================"
 echo ""
