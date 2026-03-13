@@ -6,10 +6,11 @@
 # Handles both current and older compressed logs.
 # Suitable for running as a cron job.
 #
-# Usage: report-secure.sh [-l <log_dir>] [-d <days>] [-a] [-t] [-h]
+# Usage: report-secure.sh [-l <log_dir>] [-d <days>] [-a] [-x] [-t] [-h]
 #   -l <log_dir>  Directory containing secure logs (default: /var/log)
 #   -d <days>     Only collate events from the last <days> days (default: all available logs)
 #   -a            Also collate and report authentication type (Accepted events)
+#   -x            Cross-tabulate authentication method by user (implies -a)
 #   -t            Simple table output: tab-separated username and count per line, no decorations
 #   -h            Show this help message
 #
@@ -22,6 +23,7 @@ LOG_DIR="/var/log"
 DAYS=0
 DAYS_SET=0
 AUTH_TYPE=0
+CROSS_TAB=0
 TABLE_ONLY=0
 PROG="$(basename "$0")"
 
@@ -36,11 +38,12 @@ die() {
     exit 1
 }
 
-while getopts ":l:d:ath" opt; do
+while getopts ":l:d:axth" opt; do
     case "$opt" in
         l) LOG_DIR="$OPTARG" ;;
         d) DAYS="$OPTARG"; DAYS_SET=1 ;;
         a) AUTH_TYPE=1 ;;
+        x) CROSS_TAB=1; AUTH_TYPE=1 ;;
         t) TABLE_ONLY=1 ;;
         h) usage ;;
         :) die "Option -${OPTARG} requires an argument." ;;
@@ -117,6 +120,7 @@ filter_by_date() {
 # Parse all log files and build a sorted username frequency table.
 declare -A user_count=()
 declare -A auth_count=()
+declare -A cross_count=()
 
 while IFS= read -r line; do
     # Match lines such as:
@@ -127,9 +131,11 @@ while IFS= read -r line; do
     fi
     # Match lines such as:
     #   Mar 12 10:00:01 host sshd[123]: Accepted publickey for alice from 192.168.1.1 port 22 ssh2
-    if [[ "$AUTH_TYPE" -eq 1 ]] && [[ "$line" =~ Accepted[[:space:]]([^[:space:]]+)[[:space:]]for[[:space:]] ]]; then
+    if [[ "$AUTH_TYPE" -eq 1 ]] && [[ "$line" =~ Accepted[[:space:]]([^[:space:]]+)[[:space:]]for[[:space:]]([^[:space:]]+) ]]; then
         method="${BASH_REMATCH[1]}"
+        auth_user="${BASH_REMATCH[2]}"
         auth_count["$method"]=$(( ${auth_count["$method"]:-0} + 1 ))
+        [[ "$CROSS_TAB" -eq 1 ]] && cross_count["${auth_user}"$'\t'"${method}"]=$(( ${cross_count["${auth_user}"$'\t'"${method}"]:-0} + 1 ))
     fi
 done < <(
     for f in "${LOG_FILES[@]}"; do
@@ -153,6 +159,15 @@ if [[ "$TABLE_ONLY" -eq 1 ]]; then
         done | sort -k1,1rn -k2,2 | while read -r count method; do
             printf "%s\t%d\n" "$method" "$count"
         done
+    fi
+
+    if [[ "$CROSS_TAB" -eq 1 ]] && [[ ${#cross_count[@]} -gt 0 ]]; then
+        echo ""
+        for key in "${!cross_count[@]}"; do
+            xuser="${key%%$'\t'*}"
+            xmethod="${key##*$'\t'}"
+            printf "%s\t%s\t%d\n" "$xuser" "$xmethod" "${cross_count[$key]}"
+        done | sort -k1,1 -k3,3rn -k2,2
     fi
     exit 0
 fi
@@ -214,6 +229,26 @@ if [[ "$AUTH_TYPE" -eq 1 ]]; then
         done
         echo "  Total authentications : ${auth_total}"
         echo "  Unique methods        : ${#auth_count[@]}"
+    fi
+fi
+
+if [[ "$CROSS_TAB" -eq 1 ]]; then
+    echo ""
+    echo "Authentication methods by user:"
+    echo ""
+    if [[ ${#cross_count[@]} -eq 0 ]]; then
+        echo "  No 'Accepted' authentication events found."
+    else
+        printf "  %-20s  %-30s  %s\n" "USER" "METHOD" "COUNT"
+        printf "  %-20s  %-30s  %s\n" "--------------------" "------------------------------" "-----"
+
+        for key in "${!cross_count[@]}"; do
+            xuser="${key%%$'\t'*}"
+            xmethod="${key##*$'\t'}"
+            printf "%s\t%s\t%d\n" "$xuser" "$xmethod" "${cross_count[$key]}"
+        done | sort -k1,1 -k3,3rn -k2,2 | while IFS=$'\t' read -r xuser xmethod xcount; do
+            printf "  %-20s  %-30s  %d\n" "$xuser" "$xmethod" "$xcount"
+        done
     fi
 fi
 
