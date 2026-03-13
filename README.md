@@ -7,6 +7,7 @@ human-readable report.
 
 * Collates all **"session opened for user"** events from `sshd`/PAM log lines.
 * Reports the list of users and the number of sessions opened per user.
+* Optionally collates **authentication types** from `sshd` `Accepted` log lines (e.g. `publickey`, `password`).
 * Handles the **current log** as well as **older rotated and compressed logs**
   (`.gz`, numbered rotations, date-stamped rotations).
 * Designed to run unattended as a **cron job** and email its output.
@@ -14,10 +15,11 @@ human-readable report.
 ## Usage
 
 ```
-report-secure.sh [-l <log_dir>] [-d <days>] [-t] [-h]
+report-secure.sh [-l <log_dir>] [-d <days>] [-a] [-t] [-h]
 
   -l <log_dir>   Directory containing secure logs (default: /var/log)
   -d <days>      Only collate events from the last <days> days (default: all available logs)
+  -a             Also collate and report authentication type (Accepted events)
   -t             Simple table output: tab-separated username and count per line, no decorations
   -h             Show help message
 ```
@@ -39,6 +41,12 @@ sudo ./report-secure.sh
 
 # Output a simple table (user and session count only)
 ./report-secure.sh -t
+
+# Also report authentication methods used
+./report-secure.sh -a
+
+# Last 7 days with authentication method breakdown
+./report-secure.sh -d 7 -a
 
 # Show help
 ./report-secure.sh -h
@@ -70,6 +78,43 @@ Sessions opened per user:
 
 When `-d` is omitted, all available log files are processed and the `Period` line is not shown.
 
+### Authentication type report (`-a`)
+
+Use `-a` to add a breakdown of authentication methods (from `sshd` `Accepted` log lines) to the
+report. This shows how each session was authenticated (e.g. `publickey`, `password`):
+
+```
+============================================================
+ SSH Session Report
+ Generated: 2026-03-12 06:00:01 UTC
+ Period    : Last 7 day(s)
+ Log source: /var/log/secure{,.gz,.N,.N.gz,-YYYYMMDD{,.gz}}
+============================================================
+
+Sessions opened per user:
+
+  USER                  COUNT
+  --------------------  -----
+  alice                 42
+  bob                   17
+  charlie               3
+
+  Total sessions : 62
+  Unique users   : 3
+
+Authentication methods:
+
+  METHOD                          COUNT
+  ------------------------------  -----
+  publickey                       45
+  password                        17
+
+  Total authentications : 62
+  Unique methods        : 2
+
+============================================================
+```
+
 ### Simple table output (`-t`)
 
 Use `-t` to get a compact, tab-separated list of users and session counts — useful
@@ -79,6 +124,17 @@ for piping into other tools or scripts:
 alice	42
 bob	17
 charlie	3
+```
+
+Combined with `-a`, the auth type table is appended after the user table (separated by a blank line):
+
+```
+alice	42
+bob	17
+charlie	3
+
+publickey	45
+password	17
 ```
 
 ## Installation
